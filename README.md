@@ -41,6 +41,11 @@ var webSocketServer = new WebSocketServer.Server({
         jrpc.messageHandler(message);
     });
 
+    // listen to all calls
+    jrpc.on('*', "pass", function(args) {
+        console.log("method call received: ", args);
+    });
+
     jrpc.on('add', ['x', 'y'], add);
 
     jrpc.on('mul', ['x', 'y'], function(x, y){
@@ -124,9 +129,12 @@ More examples in directory
 
 ```batch(calls)``` - batch invocation. Returned `promise` object.  
 
-```on(methodName, paramsName, handler)``` - Registration local method for incommig invocation
+```on(methodName, paramsName, handler)``` - Register local method for incoming invocation.
+If `methodName` is `"*"`, then `handler` (so-called _wildcard listener_) will receive all RPC calls and its response will be used
+for calls for which there is no regular listener. When using wildcard listeners, a `paramsName` value of `"pass"` is recommended.
+For wildcard listeners, the original method name is passed into `_` 
 
-```off(methodName)``` - disable method for incommig invocation
+```off(methodName)``` - disable method for incoming invocation
 
 ```customException(code, message, data)``` - return exception with implementation-defined server-errors    
 

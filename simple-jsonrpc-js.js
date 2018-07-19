@@ -222,6 +222,24 @@
         }
 
         function handleRemoteRequest(request) {
+            var wildcardPromise = null;
+            if (request.method != "*" && dispatcher.hasOwnProperty("*")) {
+                var newParams;
+                if (isArray(request.params)) {
+                    newParams = [request.method].concat(request.params);
+                }
+                else if (isObject(request.params)) {
+                    newParams = clone(request.params);
+                    newParams._method = request.method;
+                }
+                var wildcardRequest = {
+                    "jsonrpc": "2.0",
+                    "method": "*",
+                    "params": newParams,
+                    "id": request.id
+                };
+                wildcardPromise = handleRemoteRequest(wildcardRequest);
+            }
             if (dispatcher.hasOwnProperty(request.method)) {
                 try {
                     var result;
@@ -317,6 +335,9 @@
                         "error": setError(ERRORS.INTERNAL_ERROR, e)
                     });
                 }
+            }
+            else if (wildcardPromise) {
+                return wildcardPromise;
             }
             else {
                 return _Promise.resolve({

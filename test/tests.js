@@ -307,6 +307,50 @@ describe('Response object', function () {
 
         });
 
+        it('Incoming call. Wildcard listener should be called if there are no other method listeners', function(done){
+            var calledMethods = [];
+            JsonRpc.on('*', "pass", function({_method, x, y}) {
+                expect(x).to.equal(32);
+                expect(y).to.equal(48);
+                calledMethods.push(_method);
+            });
+
+            JsonRpc.toStream = function(message) {};
+
+            JsonRpc.messageHandler('{"jsonrpc": "2.0", "id": 2, "method": "add", "params": {"x":32, "y": 48}}');
+            JsonRpc.messageHandler('{"jsonrpc": "2.0", "id": 3, "method": "subtract", "params": {"x":32, "y": 48}}');
+
+            expect(calledMethods.length).to.equal(2);
+            expect(calledMethods).to.include('add');
+            expect(calledMethods).to.include('subtract');
+            done();
+        });
+
+        it('Incoming call. Wildcard listener should also be called if there are are other method listeners', function(done){
+            var calledMethods = [];
+            JsonRpc.on('*', "pass", function({_method, x, y}) {
+                expect(x).to.equal(32);
+                expect(y).to.equal(48);
+                calledMethods.push(_method);
+            });
+            var calledAddListener = false;
+            JsonRpc.on('add', ['x', 'y'], function(x, y){
+                calledAddListener = true;
+                return x+y;
+            });
+
+            JsonRpc.toStream = function(message) {}
+
+            JsonRpc.messageHandler('{"jsonrpc": "2.0", "id": 2, "method": "add", "params": {"x":32, "y": 48}}');
+            JsonRpc.messageHandler('{"jsonrpc": "2.0", "id": 3, "method": "subtract", "params": {"x":32, "y": 48}}');
+
+            expect(calledMethods.length).to.equal(2);
+            expect(calledMethods).to.include('add');
+            expect(calledMethods).to.include('subtract');
+            expect(calledAddListener).to.be.true;
+            done();
+        });
+
         it('Incoming notification. Positional parameters. Should be nothing return', function(done){
 
             JsonRpc.on('alert', ["message", "level"], function(message, level){
@@ -446,6 +490,48 @@ describe('Response object', function () {
             };
 
             JsonRpc.messageHandler('{"jsonrpc": "2.0", "id":44, "method": "delete", "params": {"id": 7}}');
+        });
+
+        it('Specific method call param error. should not be suppressed when using wildcard listener', function(done){
+            var inputJson;
+
+            JsonRpc.on('*', "pass", function(params) {});
+            JsonRpc.on('delete',["index"], function(index){
+                return index;
+            });
+
+            JsonRpc.toStream = function(message){
+                inputJson = JSON.parse(message);
+                expect(inputJson).to.have.ownProperty('jsonrpc');
+                expect(inputJson).to.have.ownProperty('error');
+                expect(inputJson).to.have.ownProperty('id');
+                expect(inputJson.error.code).to.have.equal(ERRORS.INVALID_PARAMS);
+                expect(inputJson).to.not.have.ownProperty('result');
+                done();
+            };
+
+            JsonRpc.messageHandler('{"jsonrpc": "2.0", "id":44, "method": "delete", "params": {"id": 7}}');
+        });
+
+        it('Wildcard method call param error. should not be suppressed when there is no matching specific listener', function(done) {
+            var inputJson;
+
+            JsonRpc.on('*', ["value"], function(params) {});
+            JsonRpc.on('delete',["index"], function(index){
+                return index;
+            });
+
+            JsonRpc.toStream = function(message){
+                inputJson = JSON.parse(message);
+                expect(inputJson).to.have.ownProperty('jsonrpc');
+                expect(inputJson).to.have.ownProperty('error');
+                expect(inputJson).to.have.ownProperty('id');
+                expect(inputJson.error.code).to.have.equal(ERRORS.INVALID_PARAMS);
+                expect(inputJson).to.not.have.ownProperty('result');
+                done();
+            };
+
+            JsonRpc.messageHandler('{"jsonrpc": "2.0", "id":44, "method": "add", "params": {"id": 7}}');
         });
 
         it('should be contained the internal error property and not contained the result property', function(done){
@@ -615,6 +701,82 @@ describe('Response object', function () {
             {"jsonrpc": "2.0", "method": "get_data", "id": "9"}\
             ]');
 
+        });
+
+        it('Incoming request with wildcard', function(done) {
+            var inputJson;
+            var wilcardCallCount = 0;
+
+            JsonRpc.on('*', "pass", function(args) {
+                wilcardCallCount++;
+                return "wildcard result";
+            });
+
+            JsonRpc.on("sum", ["x", "y", "z"], function(x, y, z){
+                return x+y+z;
+            });
+
+            JsonRpc.on("notify_hello", function(idx){
+                return idx;
+            });
+
+            JsonRpc.on("subtract", ["x", "y"], function(x, y){
+                return x-y;
+            });
+
+            JsonRpc.on("get_data", ["id"], function(id){
+                return {"id":id, "name": "Darkwing duck"};
+            });
+
+            JsonRpc.toStream = function(message){
+                inputJson = JSON.parse(message);
+
+                for(var idx in inputJson){
+                    expect(inputJson[idx]).to.have.ownProperty('jsonrpc');
+                    expect(inputJson[idx]).to.have.ownProperty('id');
+                }
+                expect(inputJson.length).equal(5);
+
+                //sum
+                expect(inputJson[0].id).equal("11");
+                expect(inputJson[0]).to.have.ownProperty('result');
+                expect(inputJson[0].result).equal(7);
+
+                //notify
+
+
+                //subtract
+                expect(inputJson[1].id).equal("223");
+                expect(inputJson[1]).to.have.ownProperty('result');
+                expect(inputJson[1].result).equal(19);
+
+                //INVALID_REQUEST
+                expect(inputJson[2]).to.have.ownProperty('error');
+                expect(inputJson[2].error.code).to.have.equal(ERRORS.INVALID_REQUEST);
+                expect(inputJson[2]).to.not.have.ownProperty('result');
+
+                //response from wildcard method
+                expect(inputJson[3].id).equal("5");
+                expect(inputJson[3]).to.have.ownProperty('result');
+                expect(inputJson[3].result).equal("wildcard result");
+
+                //
+                expect(inputJson[4].id).equal("9");
+                expect(inputJson[4]).to.have.ownProperty('result');
+
+                expect(wilcardCallCount).equal(5);
+
+                done();
+            };
+
+            JsonRpc.messageHandler('[\
+            {"jsonrpc": "2.0", "method": "sum", "params": [1,2,4], "id": "11"},\
+            {"jsonrpc": "2.0", "method": "notify_hello", "params": ["hello"]},\
+            {"jsonrpc": "2.0", "method": "subtract", "params": [42,23], "id": "223"},\
+            {"foo": "boo"},\
+            {"jsonrpc": "2.0", "method": "foo.get", "params": {"name": "myself"}, "id": "5"},\
+            {"jsonrpc": "2.0", "method": "get_data", "id": "9"}\
+            ]');
         });
 
         it('Incoming response batch', function(done){
