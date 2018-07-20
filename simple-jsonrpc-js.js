@@ -235,9 +235,11 @@
                 var wildcardRequest = {
                     "jsonrpc": "2.0",
                     "method": "*",
-                    "params": newParams,
-                    "id": request.id
+                    "params": newParams
                 };
+                if (request.hasOwnProperty('id')) {
+                    wildcardRequest.id = request.id;
+                }
                 wildcardPromise = handleRemoteRequest(wildcardRequest);
             }
             if (dispatcher.hasOwnProperty(request.method)) {
